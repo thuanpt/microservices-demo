@@ -20,6 +20,7 @@ Dự án này là một ví dụ về kiến trúc microservices sử dụng Go.
 
 - **User Service**: Quản lý người dùng (đăng ký, đăng nhập, CRUD operations)
 - **Product Service**: Quản lý sản phẩm (CRUD operations)
+- **Order Service**: Quản lý đơn hàng (tạo, cập nhật, theo dõi đơn hàng)
 - **Migration System**: Quản lý cấu trúc database với scripts tự động
 
 ## 🏗️ Kiến trúc
@@ -29,12 +30,12 @@ Dự án này là một ví dụ về kiến trúc microservices sử dụng Go.
 │   API Gateway   │
 └─────────────────┘
          │
-    ┌────┴────┬────────┐
-    │         │        │
-┌───▼───┐ ┌──▼────┐ ┌──▼──┐
-│ User  │ │Product│ │ ... │
-│Service│ │Service│ │     │
-└───────┘ └───────┘ └─────┘
+    ┌────┴────┬────────┬────────┐
+    │         │        │        │
+┌───▼───┐ ┌──▼────┐ ┌──▼────┐ ┌──▼──┐
+│ User  │ │Product│ │ Order │ │ ... │
+│Service│ │Service│ │Service│ │     │
+└───────┘ └───────┘ └───────┘ └─────┘
 ```
 
 ## 🛠️ Công nghệ sử dụng
@@ -81,6 +82,11 @@ cd ..
 cd product-service
 go mod download
 cd ..
+
+# Order Service
+cd order-service
+go mod download
+cd ..
 ```
 
 ## ⚙️ Cấu hình
@@ -106,6 +112,12 @@ cp .env.example .env
 **Product Service:**
 ```bash
 cd product-service
+cp .env.example .env
+```
+
+**Order Service:**
+```bash
+cd order-service
 cp .env.example .env
 ```
 
@@ -135,6 +147,23 @@ DB_NAME=microservices_demo
 
 # Server Configuration
 APP_PORT=8002
+```
+
+**Order Service (.env):**
+```env
+# Database Configuration
+DB_HOST=localhost
+DB_PORT=3306
+DB_USER=your_db_username
+DB_PASS=your_db_password
+DB_NAME=microservices_demo
+
+# Server Configuration
+APP_PORT=8003
+
+# External Services
+USER_SERVICE_URL=http://localhost:8001
+PRODUCT_SERVICE_URL=http://localhost:8002
 ```
 
 **⚠️ Lưu ý**: File `.env` chứa thông tin nhạy cảm và đã được thêm vào `.gitignore`. Không bao giờ commit file này lên repository!
@@ -174,6 +203,23 @@ CREATE TABLE products (
 );
 ```
 
+### Order Service Migration
+
+Migration sẽ tạo bảng `orders` với cấu trúc:
+
+```sql
+CREATE TABLE orders (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT NOT NULL,
+    product_id INT NOT NULL,
+    quantity INT NOT NULL,
+    total_amount DECIMAL(10,2) NOT NULL,
+    status ENUM('pending', 'confirmed', 'shipped', 'delivered', 'cancelled') DEFAULT 'pending',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+```
+
 ### Chạy Migration
 
 Để chạy migration, sử dụng các lệnh sau:
@@ -200,6 +246,18 @@ go run migrate.go up
 go run migrate.go down
 ```
 
+**Order Service Migration:**
+```bash
+# Di chuyển vào thư mục scripts của order-service
+cd order-service/scripts
+
+# Chạy migration up (tạo database và bảng orders)
+go run migrate.go up
+
+# Nếu cần rollback (xóa bảng orders)
+go run migrate.go down
+```
+
 ## 🚀 Chạy ứng dụng
 
 ### Chạy tất cả services
@@ -212,11 +270,16 @@ go run main.go
 # Terminal 2 - Product Service
 cd product-service
 go run main.go
+
+# Terminal 3 - Order Service
+cd order-service
+go run main.go
 ```
 
 **Services sẽ chạy tại:**
 - User Service: `http://localhost:8001`
 - Product Service: `http://localhost:8002`
+- Order Service: `http://localhost:8003`
 
 ### Chạy với development mode
 
@@ -230,6 +293,10 @@ air
 
 # Product Service  
 cd product-service
+air
+
+# Order Service
+cd order-service
 air
 ```
 
@@ -334,6 +401,50 @@ GET /products
 GET /products/search?q=keyword
 ```
 
+### Order Service Endpoints (Port 8003)
+
+#### 1. Tạo đơn hàng mới
+```
+POST /orders
+Content-Type: application/json
+
+{
+    "user_id": 1,
+    "product_id": 1,
+    "quantity": 2
+}
+```
+
+#### 2. Lấy thông tin đơn hàng
+```
+GET /orders/:id
+```
+
+#### 3. Cập nhật trạng thái đơn hàng
+```
+PUT /orders/:id/status
+Content-Type: application/json
+
+{
+    "status": "confirmed"
+}
+```
+
+#### 4. Hủy đơn hàng
+```
+DELETE /orders/:id
+```
+
+#### 5. Lấy danh sách đơn hàng của user
+```
+GET /orders/user/:user_id
+```
+
+#### 6. Lấy tất cả đơn hàng
+```
+GET /orders
+```
+
 ### Response Examples
 
 **User Success Response:**
@@ -354,6 +465,19 @@ GET /products/search?q=keyword
     "description": "Latest iPhone model",
     "price": 999.99,
     "stock": 100,
+    "created_at": "2025-08-08T10:00:00Z"
+}
+```
+
+**Order Success Response:**
+```json
+{
+    "id": 1,
+    "user_id": 1,
+    "product_id": 1,
+    "quantity": 2,
+    "total_amount": 1999.98,
+    "status": "pending",
     "created_at": "2025-08-08T10:00:00Z"
 }
 ```
@@ -405,6 +529,24 @@ microservices-demo/
     │   └── product.go      # Database operations
     └── scripts/
         └── migrate.go      # Migration script
+└── order-service/
+    ├── go.mod
+    ├── go.sum
+    ├── main.go
+    ├── .env                 # Environment variables
+    ├── handler/
+    │   └── order.go        # HTTP handlers
+    ├── migrations/
+    │   ├── 001_create_orders_table.down.sql
+    │   └── 001_create_orders_table.up.sql
+    ├── model/
+    │   └── order.go        # Data models
+    ├── repository/
+    │   └── order.go        # Database operations
+    ├── scripts/
+    │   └── migrate.go      # Migration script
+    └── service/
+        └── external.go     # External service calls
 ```
 
 ### Mô tả các thành phần:
@@ -416,6 +558,7 @@ microservices-demo/
 - **`migrations/`**: SQL files để tạo/xóa database tables
 - **`scripts/`**: Migration scripts để chạy database migrations
 - **`utils/`**: Các hàm tiện ích (hash password, validation, ...)
+- **`service/`**: External service calls (chỉ có trong order-service)
 
 ## 🧪 Testing
 
@@ -432,6 +575,9 @@ go test ./... -v
 
 cd product-service
 go test ./... -v
+
+cd order-service
+go test ./... -v
 ```
 
 ## 🐳 Docker (Coming Soon)
@@ -440,6 +586,7 @@ go test ./... -v
 # Build Docker images
 docker build -t user-service ./user-service
 docker build -t product-service ./product-service
+docker build -t order-service ./order-service
 
 # Run with Docker Compose
 docker-compose up -d
@@ -489,9 +636,9 @@ Nếu bạn gặp vấn đề, vui lòng tạo issue tại [GitHub Issues](https
 
 - [x] User Service
 - [x] Product Service
+- [x] Order Service
 - [x] Database Migration System
 - [ ] Authentication Service
-- [ ] Order Service
 - [ ] API Gateway
 - [ ] Docker containerization
 - [ ] Kubernetes deployment
