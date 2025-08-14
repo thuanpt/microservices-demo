@@ -190,10 +190,8 @@ go run migrate.go down
 
 **Product Service Migration:**
 ```bash
-# Di chuyển vào thư mục scripts của product-service
-cd product-service/scripts
-
-# Chạy migration up (tạo database và bảng products)
+# Tương tự cho product-service
+cd product-service/scripts  
 go run migrate.go up
 
 # Nếu cần rollback (xóa bảng products)
