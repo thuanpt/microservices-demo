@@ -12,28 +12,52 @@ func InsertUser(db *sql.DB, user *model.User) (int, error) {
     if err != nil {
         return 0, err
     }
+    
     id, _ := result.LastInsertId()
     return int(id), nil
 }
 
-// Lấy user theo username
-func GetUserByUsername(db *sql.DB, username string) (*model.User, error) {
+// Lấy user theo ID (bao gồm created_at và updated_at)
+func GetUserByID(db *sql.DB, id int) (*model.User, error) {
     var user model.User
-    err := db.QueryRow("SELECT id, username, password, email FROM users WHERE username = ?", username).
-        Scan(&user.ID, &user.Username, &user.Password, &user.Email)
+    err := db.QueryRow(`
+        SELECT id, username, password, email, created_at, updated_at 
+        FROM users WHERE id = ?`, id).
+        Scan(&user.ID, &user.Username, &user.Password, &user.Email, &user.CreatedAt, &user.UpdatedAt)
+    
     if err != nil {
         return nil, err
     }
+    
     return &user, nil
 }
 
-// Lấy user theo id
-func GetUserByID(db *sql.DB, id int) (*model.User, error) {
+// Lấy user theo username (cần cho login)
+func GetUserByUsername(db *sql.DB, username string) (*model.User, error) {
     var user model.User
-    err := db.QueryRow("SELECT id, username, email FROM users WHERE id = ?", id).
-        Scan(&user.ID, &user.Username, &user.Email)
+    err := db.QueryRow(`
+        SELECT id, username, password, email, created_at, updated_at 
+        FROM users WHERE username = ?`, username).
+        Scan(&user.ID, &user.Username, &user.Password, &user.Email, &user.CreatedAt, &user.UpdatedAt)
+    
     if err != nil {
         return nil, err
     }
+    
+    return &user, nil
+}
+
+// Lấy user theo email (có thể cần sau này)
+func GetUserByEmail(db *sql.DB, email string) (*model.User, error) {
+    var user model.User
+    err := db.QueryRow(`
+        SELECT id, username, password, email, created_at, updated_at 
+        FROM users WHERE email = ?`, email).
+        Scan(&user.ID, &user.Username, &user.Password, &user.Email, &user.CreatedAt, &user.UpdatedAt)
+    
+    if err != nil {
+        return nil, err
+    }
+    
     return &user, nil
 }

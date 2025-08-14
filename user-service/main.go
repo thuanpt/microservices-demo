@@ -5,6 +5,7 @@ import (
     "log"
     "os"
     "user-service/handler"
+    "user-service/utils"
     "github.com/gin-gonic/gin"
     "github.com/joho/godotenv"
     _ "github.com/go-sql-driver/mysql"
@@ -29,23 +30,31 @@ func main() {
     }
     defer db.Close()
 
-    // Khởi tạo router Gin
+    if err := db.Ping(); err != nil {
+        log.Fatalf("Không thể ping DB: %v", err)
+    }
+
+    // Khởi tạo router
     r := gin.Default()
 
-    // Route kiểm tra service
+    // Health check
     r.GET("/health", func(c *gin.Context) {
-        c.JSON(200, gin.H{"status": "ok"})
+        c.JSON(200, gin.H{"status": "ok", "service": "user-service"})
     })
 
-    // Route đăng ký user
-    r.POST("/users", handler.RegisterUser(db))
+    // PUBLIC routes (không cần authentication)
+    r.POST("/register", handler.RegisterUser(db))     // Đăng ký
+    r.POST("/login", handler.LoginUser(db))          // Đăng nhập
+    r.GET("/users/:id", handler.GetUser(db))         // Lấy user theo ID (public)
 
-    // Route đăng nhập user
-    r.POST("/login", handler.LoginUser(db))
+    // PROTECTED routes (cần authentication)
+    protected := r.Group("/")
+    protected.Use(utils.JWTMiddleware()) // Apply JWT middleware
+    {
+        protected.GET("/profile", handler.GetProfile(db))     // Lấy profile của chính mình
+        // Có thể thêm các protected routes khác ở đây
+    }
 
-    // Route lấy thông tin user
-    r.GET("/users/:id", handler.GetUser(db))
-
-    // Chạy server
+    log.Printf("User Service đang chạy trên port %s", os.Getenv("APP_PORT"))
     r.Run(":" + os.Getenv("APP_PORT"))
 }
