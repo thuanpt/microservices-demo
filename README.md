@@ -19,8 +19,25 @@ Dự án demo microservices được xây dựng bằng Go, sử dụng Gin fram
 Dự án này là một ví dụ về kiến trúc microservices sử dụng Go. Hiện tại bao gồm:
 
 - **API Gateway**: Cổng chính xử lý routing, authentication, và rate limiting
-- **User Service**: Quản lý người dùng (đăng ký, đăng nhập, CRUD operations)
-- **P│   └── scripts/
+- **User Service**: Quản lý người dùng (đăng ký, đăng nhập, CRUD operations)├── product-service/
+│   ├── .dockerignore
+│   ├── Dockerfile
+│   ├── go.mod
+│   ├── go.sum
+│   ├── main.go
+│   ├── .env                 # Environment variables
+│   ├── handler/
+│   │   └── product.go      # HTTP handlers
+│   ├── migrations/
+│   │   ├── 001_create_products_table.down.sql
+│   │   └── 001_create_products_table.up.sql
+│   ├── model/
+│   │   └── product.go      # Data models
+│   ├── repository/
+│   │   └── product.go      # Database operations
+│   └── scripts/
+│       └── migrate.go      # Migration script
+└── order-service/ipts/
 │       └── migrate.go      # Migration script
 └── order-service/uct Service**: Quản lý sản phẩm (CRUD operations)
 - **Order Service**: Quản lý đơn hàng (tạo, cập nhật, theo dõi đơn hàng)
@@ -313,7 +330,27 @@ go run migrate.go down
 
 ## 🚀 Chạy ứng dụng
 
-### Chạy tất cả services
+### 🐳 Chạy với Docker (Khuyến nghị)
+
+**Cách nhanh nhất để chạy toàn bộ hệ thống:**
+
+```bash
+# Clone và chạy ngay
+git clone https://github.com/thuanpt/microservices-demo.git
+cd microservices-demo
+
+# Build và chạy tất cả services
+docker-compose up --build -d
+
+# Kiểm tra logs
+docker-compose logs -f
+```
+
+**API sẽ có sẵn tại `http://localhost:8000`**
+
+### 💻 Chạy Manual (Development)
+
+**Yêu cầu trước:** MySQL đang chạy và đã cấu hình .env files
 
 ```bash
 # Terminal 1 - User Service
@@ -623,7 +660,11 @@ Authorization: Bearer <admin_token>
 microservices-demo/
 ├── .gitignore
 ├── README.md
+├── docker-compose.yml       # Docker Compose configuration
+├── init-db.sql             # Database initialization script
 ├── api-gateway/
+│   ├── .dockerignore
+│   ├── Dockerfile
 │   ├── go.mod
 │   ├── go.sum
 │   ├── main.go
@@ -636,6 +677,8 @@ microservices-demo/
 │   └── proxy/
 │       └── proxy.go        # Request routing and proxying
 ├── user-service/
+│   ├── .dockerignore
+│   ├── Dockerfile
 │   ├── go.mod
 │   ├── go.sum
 │   ├── main.go
@@ -671,6 +714,8 @@ microservices-demo/
     └── scripts/
         └── migrate.go      # Migration script
 └── order-service/
+    ├── .dockerignore
+    ├── Dockerfile
     ├── go.mod
     ├── go.sum
     ├── main.go
@@ -691,6 +736,12 @@ microservices-demo/
 ```
 
 ### Mô tả các thành phần:
+
+**Docker Files:**
+- **`docker-compose.yml`**: Orchestration cho tất cả services và database
+- **`init-db.sql`**: Script khởi tạo database và tables
+- **`Dockerfile`**: Container build instructions cho từng service  
+- **`.dockerignore`**: Files/folders bị ignore khi build image
 
 **API Gateway:**
 - **`config/`**: Quản lý cấu hình ứng dụng
@@ -730,18 +781,84 @@ cd api-gateway
 go test ./... -v
 ```
 
-## 🐳 Docker (Coming Soon)
+## 🐳 Docker
+
+Dự án đã được containerized với Docker và Docker Compose để dễ dàng deploy và development.
+
+### Quick Start với Docker
 
 ```bash
-# Build Docker images
-docker build -t user-service ./user-service
-docker build -t product-service ./product-service
-docker build -t order-service ./order-service
-docker build -t api-gateway ./api-gateway
+# Build và chạy tất cả services
+docker-compose up --build
 
-# Run with Docker Compose
-docker-compose up -d
+# Hoặc chạy background
+docker-compose up --build -d
+
+# Xem logs
+docker-compose logs -f
+
+# Stop tất cả services
+docker-compose down
+
+# Stop và xóa volumes
+docker-compose down -v
 ```
+
+### Services sẽ chạy tại:
+- **API Gateway**: `http://localhost:8000`
+- **User Service**: `http://localhost:8001` (Internal)
+- **Product Service**: `http://localhost:8002` (Internal) 
+- **Order Service**: `http://localhost:8003` (Internal)
+- **MySQL Database**: `localhost:3306`
+
+### Useful Docker Commands
+
+```bash
+# Build specific service
+docker-compose build api-gateway
+
+# Restart specific service
+docker-compose restart user-service
+
+# View logs of specific service
+docker-compose logs -f api-gateway
+
+# Execute command in running container
+docker-compose exec api-gateway sh
+
+# View running services
+docker-compose ps
+
+# Remove stopped containers and networks
+docker-compose down --remove-orphans
+```
+
+### Development với Docker
+
+```bash
+# Development mode với hot reload (nếu có Air setup)
+docker-compose -f docker-compose.dev.yml up
+
+# Chỉ chạy database cho local development
+docker-compose up mysql -d
+
+# Build lại service sau khi thay đổi code
+docker-compose build api-gateway
+docker-compose up api-gateway -d
+
+# Reset everything (containers, networks, volumes)
+docker-compose down -v --remove-orphans
+docker system prune -a
+```
+
+### Environment Variables trong Docker
+
+Environment variables được quản lý thông qua:
+1. **File `.env`** trong mỗi service directory
+2. **docker-compose.yml** environment section
+3. **Dockerfile ENV** statements
+
+**Lưu ý**: Trong production, sử dụng Docker Secrets hoặc external config management.
 
 ## 🔧 Development
 
@@ -786,13 +903,14 @@ Nếu bạn gặp vấn đề, vui lòng tạo issue tại [GitHub Issues](https
 ## 🎯 Roadmap
 
 - [x] User Service
-- [x] Product Service
+- [x] Product Service  
 - [x] Order Service
 - [x] Database Migration System
 - [x] JWT Authentication
 - [x] API Gateway
 - [x] Rate Limiting
-- [ ] Docker containerization
+- [x] Docker containerization
+- [ ] Docker Compose for development
 - [ ] Kubernetes deployment
 - [ ] Monitoring và Logging
 - [ ] Unit Tests
@@ -801,3 +919,5 @@ Nếu bạn gặp vấn đề, vui lòng tạo issue tại [GitHub Issues](https
 - [ ] Load Balancing
 - [ ] Circuit Breaker Pattern
 - [ ] Distributed Tracing
+- [ ] Health Checks
+- [ ] Graceful Shutdown
