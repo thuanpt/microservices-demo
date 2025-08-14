@@ -22,6 +22,46 @@ services:
       timeout: 20s
       retries: 10
 
+  # Redis for caching and pub/sub
+  redis:
+    image: redis:7-alpine
+    container_name: microservices_redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --requirepass redis123
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - microservices-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 30s
+      timeout: 3s
+      retries: 5
+
+  # RabbitMQ for message queuing
+  rabbitmq:
+    image: rabbitmq:3.12-management-alpine
+    container_name: microservices_rabbitmq
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: microservices
+      RABBITMQ_DEFAULT_PASS: microservices123
+      RABBITMQ_DEFAULT_VHOST: /microservices
+    ports:
+      - "5672:5672"    # AMQP port
+      - "15672:15672"  # Management UI
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    networks:
+      - microservices-network
+    healthcheck:
+      test: rabbitmq-diagnostics -q ping
+      interval: 30s
+      timeout: 30s
+      retries: 3
+
   # User Service
   user-service:
     build:
@@ -37,18 +77,21 @@ services:
       - DB_NAME=user_service_db
       - APP_PORT=8001
       - JWT_SECRET=your-secret-key-change-this-in-production
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=redis123
+      - RABBITMQ_URL=amqp://microservices:microservices123@rabbitmq:5672/microservices
     ports:
       - "8001:8001"
     depends_on:
       mysql:
         condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
     networks:
       - microservices-network
-    healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8001/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
 
   # Product Service  
   product-service:
@@ -64,18 +107,21 @@ services:
       - DB_PASS=microservices123
       - DB_NAME=product_service_db
       - APP_PORT=8002
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=redis123
+      - RABBITMQ_URL=amqp://microservices:microservices123@rabbitmq:5672/microservices
     ports:
       - "8002:8002"
     depends_on:
       mysql:
         condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
     networks:
       - microservices-network
-    healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8002/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
 
   # Order Service
   order-service:
@@ -93,6 +139,10 @@ services:
       - APP_PORT=8003
       - USER_SERVICE_URL=http://user-service:8001
       - PRODUCT_SERVICE_URL=http://product-service:8002
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=redis123
+      - RABBITMQ_URL=amqp://microservices:microservices123@rabbitmq:5672/microservices
     ports:
       - "8003:8003"
     depends_on:
@@ -100,13 +150,12 @@ services:
         condition: service_healthy
       product-service:
         condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
     networks:
       - microservices-network
-    healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8003/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
 
   # API Gateway
   api-gateway:
@@ -121,6 +170,9 @@ services:
       - PRODUCT_SERVICE_URL=http://product-service:8002
       - ORDER_SERVICE_URL=http://order-service:8003
       - JWT_SECRET=your-secret-key-change-this-in-production
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=redis123
     ports:
       - "8000:8000"
     depends_on:
@@ -130,13 +182,10 @@ services:
         condition: service_healthy
       order-service:
         condition: service_healthy
+      redis:
+        condition: service_healthy
     networks:
       - microservices-network
-    healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8000/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
 
 # Networks
 networks:
@@ -146,4 +195,8 @@ networks:
 # Volumes
 volumes:
   mysql_data:
+    driver: local
+  redis_data:
+    driver: local
+  rabbitmq_data:
     driver: local
