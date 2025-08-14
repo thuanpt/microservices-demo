@@ -18,24 +18,43 @@ Dự án demo microservices được xây dựng bằng Go, sử dụng Gin fram
 
 Dự án này là một ví dụ về kiến trúc microservices sử dụng Go. Hiện tại bao gồm:
 
+- **API Gateway**: Cổng chính xử lý routing, authentication, và rate limiting
 - **User Service**: Quản lý người dùng (đăng ký, đăng nhập, CRUD operations)
-- **Product Service**: Quản lý sản phẩm (CRUD operations)
+- **P│   └── scripts/
+│       └── migrate.go      # Migration script
+└── order-service/uct Service**: Quản lý sản phẩm (CRUD operations)
 - **Order Service**: Quản lý đơn hàng (tạo, cập nhật, theo dõi đơn hàng)
+- **JWT Authentication**: Hệ thống xác thực và phân quyền người dùng
 - **Migration System**: Quản lý cấu trúc database với scripts tự động
 
 ## 🏗️ Kiến trúc
 
 ```
-┌─────────────────┐
-│   API Gateway   │
-└─────────────────┘
-         │
-    ┌────┴────┬────────┬────────┐
-    │         │        │        │
-┌───▼───┐ ┌──▼────┐ ┌──▼────┐ ┌──▼──┐
-│ User  │ │Product│ │ Order │ │ ... │
-│Service│ │Service│ │Service│ │     │
-└───────┘ └───────┘ └───────┘ └─────┘
+                    Client Requests
+                          │
+                          ▼
+┌─────────────────────────────────────────┐
+│              API Gateway                │
+│  ┌─────────────────┐ ┌─────────────────┐│
+│  │  Authentication │ │  Rate Limiting  ││
+│  │   & JWT Auth    │ │   & Routing     ││
+│  └─────────────────┘ └─────────────────┘│
+└─────────────────────────────────────────┘
+                          │
+       ┌──────────────────┼──────────────────┐
+       │                  │                  │
+┌─────▼──────┐ ┌─────────▼────┐ ┌──────────▼──┐
+│    User    │ │   Product    │ │    Order    │
+│  Service   │ │   Service    │ │   Service   │
+│ (Port 8001)│ │ (Port 8002)  │ │(Port 8003)  │
+└────────────┘ └──────────────┘ └─────────────┘
+       │                  │                  │
+       └──────────────────┼──────────────────┘
+                          │
+                   ┌─────▼──────┐
+                   │   MySQL    │
+                   │ Database   │
+                   └────────────┘
 ```
 
 ## 🛠️ Công nghệ sử dụng
@@ -43,8 +62,10 @@ Dự án này là một ví dụ về kiến trúc microservices sử dụng Go.
 - **Go** 1.24.3
 - **Gin** - HTTP web framework
 - **MySQL** - Database
+- **JWT** - JSON Web Token cho authentication
 - **bcrypt** - Mã hóa mật khẩu
 - **godotenv** - Quản lý biến môi trường
+- **Rate Limiting** - Giới hạn số lượng request
 
 ### Dependencies chính:
 
@@ -52,7 +73,9 @@ Dự án này là một ví dụ về kiến trúc microservices sử dụng Go.
 github.com/gin-gonic/gin v1.10.1
 github.com/go-sql-driver/mysql v1.9.3
 github.com/joho/godotenv v1.5.1
+github.com/golang-jwt/jwt/v4 v4.5.0
 golang.org/x/crypto v0.23.0
+golang.org/x/time v0.5.0
 ```
 
 ## 📥 Cài đặt
@@ -87,6 +110,11 @@ cd ..
 cd order-service
 go mod download
 cd ..
+
+# API Gateway
+cd api-gateway
+go mod download
+cd ..
 ```
 
 ## ⚙️ Cấu hình
@@ -118,6 +146,12 @@ cp .env.example .env
 **Order Service:**
 ```bash
 cd order-service
+cp .env.example .env
+```
+
+**API Gateway:**
+```bash
+cd api-gateway
 cp .env.example .env
 ```
 
@@ -164,6 +198,25 @@ APP_PORT=8003
 # External Services
 USER_SERVICE_URL=http://localhost:8001
 PRODUCT_SERVICE_URL=http://localhost:8002
+```
+
+**API Gateway (.env):**
+```env
+# Server Configuration
+APP_PORT=8000
+
+# JWT Configuration
+JWT_SECRET=your-super-secret-jwt-key-change-in-production
+JWT_EXPIRES_IN=24h
+
+# External Services
+USER_SERVICE_URL=http://localhost:8001
+PRODUCT_SERVICE_URL=http://localhost:8002
+ORDER_SERVICE_URL=http://localhost:8003
+
+# Rate Limiting
+RATE_LIMIT_REQUESTS=100
+RATE_LIMIT_DURATION=1m
 ```
 
 **⚠️ Lưu ý**: File `.env` chứa thông tin nhạy cảm và đã được thêm vào `.gitignore`. Không bao giờ commit file này lên repository!
@@ -274,12 +327,17 @@ go run main.go
 # Terminal 3 - Order Service
 cd order-service
 go run main.go
+
+# Terminal 4 - API Gateway
+cd api-gateway
+go run main.go
 ```
 
 **Services sẽ chạy tại:**
-- User Service: `http://localhost:8001`
-- Product Service: `http://localhost:8002`
-- Order Service: `http://localhost:8003`
+- API Gateway: `http://localhost:8000` (Main entry point)
+- User Service: `http://localhost:8001` (Internal)
+- Product Service: `http://localhost:8002` (Internal)
+- Order Service: `http://localhost:8003` (Internal)
 
 ### Chạy với development mode
 
@@ -298,15 +356,21 @@ air
 # Order Service
 cd order-service
 air
+
+# API Gateway
+cd api-gateway
+air
 ```
 
 ## 📚 API Documentation
 
-### User Service Endpoints (Port 8001)
+**⚡ Tất cả API requests đều được gửi thông qua API Gateway tại `http://localhost:8000`**
+
+### Authentication
 
 #### 1. Đăng ký người dùng
 ```
-POST /register
+POST /api/v1/auth/register
 Content-Type: application/json
 
 {
@@ -318,23 +382,39 @@ Content-Type: application/json
 
 #### 2. Đăng nhập
 ```
-POST /login
+POST /api/v1/auth/login
 Content-Type: application/json
 
 {
     "email": "user@example.com",
     "password": "password123"
 }
+
+Response:
+{
+    "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "user": {
+        "id": 1,
+        "name": "Nguyen Van A",
+        "email": "user@example.com"
+    }
+}
 ```
 
-#### 3. Lấy thông tin người dùng
+### User Service Endpoints
+
+**🔒 Yêu cầu Authentication: Thêm header `Authorization: Bearer <token>`**
+
+#### 3. Lấy thông tin người dùng hiện tại
 ```
-GET /user/:id
+GET /api/v1/users/me
+Authorization: Bearer <token>
 ```
 
 #### 4. Cập nhật thông tin người dùng
 ```
-PUT /user/:id
+PUT /api/v1/users/me
+Authorization: Bearer <token>
 Content-Type: application/json
 
 {
@@ -343,21 +423,20 @@ Content-Type: application/json
 }
 ```
 
-#### 5. Xóa người dùng
+#### 5. Lấy danh sách tất cả người dùng (Admin only)
 ```
-DELETE /user/:id
-```
-
-#### 6. Lấy danh sách tất cả người dùng
-```
-GET /users
+GET /api/v1/users
+Authorization: Bearer <admin_token>
 ```
 
-### Product Service Endpoints (Port 8002)
+### Product Service Endpoints
 
-#### 1. Tạo sản phẩm mới
+**🔒 Yêu cầu Authentication: Thêm header `Authorization: Bearer <token>`**
+
+#### 6. Tạo sản phẩm mới (Admin only)
 ```
-POST /products
+POST /api/v1/products
+Authorization: Bearer <admin_token>
 Content-Type: application/json
 
 {
@@ -368,14 +447,16 @@ Content-Type: application/json
 }
 ```
 
-#### 2. Lấy thông tin sản phẩm
+#### 7. Lấy thông tin sản phẩm
 ```
-GET /products/:id
+GET /api/v1/products/:id
+Authorization: Bearer <token>
 ```
 
-#### 3. Cập nhật sản phẩm
+#### 8. Cập nhật sản phẩm (Admin only)
 ```
-PUT /products/:id
+PUT /api/v1/products/:id
+Authorization: Bearer <admin_token>
 Content-Type: application/json
 
 {
@@ -386,43 +467,50 @@ Content-Type: application/json
 }
 ```
 
-#### 4. Xóa sản phẩm
+#### 9. Xóa sản phẩm (Admin only)
 ```
-DELETE /products/:id
-```
-
-#### 5. Lấy danh sách tất cả sản phẩm
-```
-GET /products
+DELETE /api/v1/products/:id
+Authorization: Bearer <admin_token>
 ```
 
-#### 6. Tìm kiếm sản phẩm
+#### 10. Lấy danh sách tất cả sản phẩm
 ```
-GET /products/search?q=keyword
+GET /api/v1/products
+Authorization: Bearer <token>
 ```
 
-### Order Service Endpoints (Port 8003)
-
-#### 1. Tạo đơn hàng mới
+#### 11. Tìm kiếm sản phẩm
 ```
-POST /orders
+GET /api/v1/products/search?q=keyword
+Authorization: Bearer <token>
+```
+
+### Order Service Endpoints
+
+**🔒 Yêu cầu Authentication: Thêm header `Authorization: Bearer <token>`**
+
+#### 12. Tạo đơn hàng mới
+```
+POST /api/v1/orders
+Authorization: Bearer <token>
 Content-Type: application/json
 
 {
-    "user_id": 1,
     "product_id": 1,
     "quantity": 2
 }
 ```
 
-#### 2. Lấy thông tin đơn hàng
+#### 13. Lấy thông tin đơn hàng
 ```
-GET /orders/:id
+GET /api/v1/orders/:id
+Authorization: Bearer <token>
 ```
 
-#### 3. Cập nhật trạng thái đơn hàng
+#### 14. Cập nhật trạng thái đơn hàng (Admin only)
 ```
-PUT /orders/:id/status
+PUT /api/v1/orders/:id/status
+Authorization: Bearer <admin_token>
 Content-Type: application/json
 
 {
@@ -430,22 +518,53 @@ Content-Type: application/json
 }
 ```
 
-#### 4. Hủy đơn hàng
+#### 15. Hủy đơn hàng
 ```
-DELETE /orders/:id
-```
-
-#### 5. Lấy danh sách đơn hàng của user
-```
-GET /orders/user/:user_id
+DELETE /api/v1/orders/:id
+Authorization: Bearer <token>
 ```
 
-#### 6. Lấy tất cả đơn hàng
+#### 16. Lấy danh sách đơn hàng của user hiện tại
 ```
-GET /orders
+GET /api/v1/orders/my-orders
+Authorization: Bearer <token>
 ```
+
+#### 17. Lấy tất cả đơn hàng (Admin only)
+```
+GET /api/v1/orders
+Authorization: Bearer <admin_token>
+```
+
+### API Gateway Features
+
+#### Rate Limiting
+- **Giới hạn**: 100 requests per minute per IP
+- **Response khi vượt giới hạn**: HTTP 429 Too Many Requests
+
+#### Authentication Middleware
+- **JWT Token Validation**: Tự động xác thực token cho các protected routes
+- **User Context**: Tự động inject thông tin user vào request headers cho các microservices
+
+#### Request/Response Logging
+- Log tất cả requests đi qua gateway
+- Performance monitoring và error tracking
 
 ### Response Examples
+
+**Login Success Response:**
+```json
+{
+    "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c",
+    "expires_in": "24h",
+    "user": {
+        "id": 1,
+        "name": "Nguyen Van A",
+        "email": "user@example.com",
+        "created_at": "2025-08-08T10:00:00Z"
+    }
+}
+```
 
 **User Success Response:**
 ```json
@@ -485,7 +604,16 @@ GET /orders
 **Error Response:**
 ```json
 {
-    "error": "Dữ liệu không hợp lệ"
+    "error": "Unauthorized",
+    "message": "Token không hợp lệ hoặc đã hết hạn"
+}
+```
+
+**Rate Limit Error:**
+```json
+{
+    "error": "Too Many Requests",
+    "message": "Vượt quá giới hạn request. Vui lòng thử lại sau."
 }
 ```
 
@@ -495,6 +623,18 @@ GET /orders
 microservices-demo/
 ├── .gitignore
 ├── README.md
+├── api-gateway/
+│   ├── go.mod
+│   ├── go.sum
+│   ├── main.go
+│   ├── .env                 # Environment variables
+│   ├── config/
+│   │   └── config.go       # Configuration management
+│   ├── middleware/
+│   │   ├── auth.go         # JWT authentication
+│   │   └── ratelimit.go    # Rate limiting
+│   └── proxy/
+│       └── proxy.go        # Request routing and proxying
 ├── user-service/
 │   ├── go.mod
 │   ├── go.sum
@@ -512,8 +652,9 @@ microservices-demo/
 │   ├── scripts/
 │   │   └── migrate.go      # Migration script
 │   └── utils/
-│       └── hash.go         # Utility functions
-└── product-service/
+│       ├── hash.go         # Utility functions
+│       └── jwt.go          # JWT token utilities
+├── product-service/
     ├── go.mod
     ├── go.sum
     ├── main.go
@@ -551,13 +692,19 @@ microservices-demo/
 
 ### Mô tả các thành phần:
 
+**API Gateway:**
+- **`config/`**: Quản lý cấu hình ứng dụng
+- **`middleware/`**: Authentication, rate limiting, logging
+- **`proxy/`**: Request routing và proxying tới các microservices
+
+**Microservices:**
 - **`main.go`**: Entry point của ứng dụng
 - **`handler/`**: Xử lý HTTP requests và responses
 - **`model/`**: Định nghĩa cấu trúc dữ liệu
 - **`repository/`**: Tương tác với database
 - **`migrations/`**: SQL files để tạo/xóa database tables
 - **`scripts/`**: Migration scripts để chạy database migrations
-- **`utils/`**: Các hàm tiện ích (hash password, validation, ...)
+- **`utils/`**: Các hàm tiện ích (hash password, JWT, validation, ...)
 - **`service/`**: External service calls (chỉ có trong order-service)
 
 ## 🧪 Testing
@@ -578,6 +725,9 @@ go test ./... -v
 
 cd order-service
 go test ./... -v
+
+cd api-gateway
+go test ./... -v
 ```
 
 ## 🐳 Docker (Coming Soon)
@@ -587,6 +737,7 @@ go test ./... -v
 docker build -t user-service ./user-service
 docker build -t product-service ./product-service
 docker build -t order-service ./order-service
+docker build -t api-gateway ./api-gateway
 
 # Run with Docker Compose
 docker-compose up -d
@@ -638,8 +789,9 @@ Nếu bạn gặp vấn đề, vui lòng tạo issue tại [GitHub Issues](https
 - [x] Product Service
 - [x] Order Service
 - [x] Database Migration System
-- [ ] Authentication Service
-- [ ] API Gateway
+- [x] JWT Authentication
+- [x] API Gateway
+- [x] Rate Limiting
 - [ ] Docker containerization
 - [ ] Kubernetes deployment
 - [ ] Monitoring và Logging
@@ -647,3 +799,5 @@ Nếu bạn gặp vấn đề, vui lòng tạo issue tại [GitHub Issues](https
 - [ ] Integration Tests
 - [ ] Service Discovery
 - [ ] Load Balancing
+- [ ] Circuit Breaker Pattern
+- [ ] Distributed Tracing
